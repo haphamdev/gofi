@@ -1,2 +1,2 @@
 # gofi
-Just wait for it
+Just to learn Golang

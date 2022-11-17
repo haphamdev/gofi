@@ -1,35 +1,25 @@
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
+var app = tview.NewApplication()
+
+var view = tview.NewTextView().SetTextColor(tcell.ColorGreen).SetText("Press q to quit")
+
 func main() {
-	currentDir, err := os.Getwd()
+    app.SetInputCapture(
+        func(event *tcell.EventKey) *tcell.EventKey {
+            if event.Rune() == 113 {
+                app.Stop()
+            }
+            return event
+        })
 
-	panicIfError(err)
+    if err := app.SetRoot(view, true).EnableMouse(true).Run(); err != nil {
+        panic(err)
+    }
 
-	fmt.Printf("Current working directory is: %s\n", currentDir)
-
-	files, err := ioutil.ReadDir(currentDir)
-
-	panicIfError(err)
-
-	for _, file := range files {
-		fileStat, err := os.Stat(fmt.Sprintf("%s/%s", currentDir, file.Name()))
-		panicIfError(err)
-
-		fmt.Printf("%s %s\n",
-			fileStat.Mode(),
-			file.Name(),
-		)
-	}
-}
-
-func panicIfError(err error) {
-	if err != nil {
-		panic(err)
-	}
 }

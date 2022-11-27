@@ -46,72 +46,6 @@ type Application struct {
 	waitgroup          sync.WaitGroup // wait until all goroutines complete
 }
 
-type UIDataItem interface{}
-
-func (app *Application) addItem(item *Item) {
-	app.items = append(app.items, *item)
-	app.application.QueueUpdateDraw(func() {
-		app.listView.AddItem(item.Title, "", 0, nil)
-		// Redraw footer to because the total item is changed
-		app.footerView.SetText(fmt.Sprintf("%d/%d: %s", app.selectedItemIndex+1, len(app.items), item.Footer))
-	})
-}
-
-/**
-* Start the application in the main goroutine.
-* Launch a new goroutine to receive the added items.
-* This new goroutine will stop when receiving a signal in the app.quit channel
- */
-func (app *Application) start() {
-	log.Println("Starting application...")
-	app.listView.SetBorder(true)
-	app.descriptionView.SetBorder(true)
-	app.headerView.SetBorder(true)
-	app.footerView.SetBorder(true)
-
-	app.waitgroup.Add(1)
-	// a new goroutine to receive new items
-	go func() {
-	NEW_ITEM_LOOP:
-		for {
-			select {
-			case stop := <-app.stopReceiveNewItem:
-				if stop {
-					close(app.itemAdded)
-					app.waitgroup.Done()
-					break NEW_ITEM_LOOP
-				}
-			case newItem := <-app.itemAdded:
-				log.Println("Receiving newly added item: ", newItem.Title)
-				app.addItem(&newItem)
-			default:
-				continue
-			}
-		}
-
-		log.Println("No longer receive new items")
-	}()
-
-	flex := tview.NewFlex().
-		AddItem(app.listView, 30, 0, true).
-		AddItem(
-			tview.NewFlex().SetDirection(tview.FlexRow).
-				AddItem(app.headerView, 3, 0, false).
-				AddItem(app.descriptionView, 0, 1, false).
-				AddItem(app.footerView, 3, 0, false),
-			0, 7, false,
-		)
-
-		// start tview application
-	if err := app.application.SetRoot(flex, true).EnableMouse(true).Run(); err != nil {
-		panic(err)
-	}
-
-	log.Println("Waiting until no longer receiving new item...")
-	app.waitgroup.Wait()
-	log.Println("Stopped")
-}
-
 func newApplication() *Application {
 	app := Application{
 		application:        tview.NewApplication(),
@@ -168,7 +102,75 @@ func newApplication() *Application {
 	return &app
 }
 
-func addItem(itemAddedChannel chan Item) {
+/**
+* Start the application in the main goroutine.
+* Launch a new goroutine to receive the added items.
+* This new goroutine will stop when receiving a signal in the app.quit channel
+ */
+func (app *Application) start() {
+	log.Println("Starting application...")
+	app.listView.SetBorder(true)
+	app.descriptionView.SetBorder(true)
+	app.headerView.SetBorder(true)
+	app.footerView.SetBorder(true)
+
+	app.waitgroup.Add(1)
+	// a new goroutine to receive new items from app.itemAdded channel
+	go func() {
+	NEW_ITEM_LOOP:
+		for {
+			select {
+			case stop := <-app.stopReceiveNewItem:
+				if stop {
+					close(app.itemAdded)
+					app.waitgroup.Done()
+					break NEW_ITEM_LOOP
+				}
+			case newItem := <-app.itemAdded:
+				log.Println("Receiving newly added item: ", newItem.Title)
+				app.addItem(&newItem)
+			default:
+				continue
+			}
+		}
+
+		log.Println("No longer receive new items")
+	}()
+
+	flex := tview.NewFlex().
+		AddItem(app.listView, 30, 0, true).
+		AddItem(
+			tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(app.headerView, 3, 0, false).
+				AddItem(app.descriptionView, 0, 1, false).
+				AddItem(app.footerView, 3, 0, false),
+			0, 7, false,
+		)
+
+		// start tview application
+	if err := app.application.SetRoot(flex, true).EnableMouse(true).Run(); err != nil {
+		panic(err)
+	}
+
+	log.Println("Waiting until no longer receiving new item...")
+	app.waitgroup.Wait()
+	log.Println("Stopped")
+}
+
+func (app *Application) addItem(item *Item) {
+	app.items = append(app.items, *item)
+	app.application.QueueUpdateDraw(func() {
+		app.listView.AddItem(item.Title, "", 0, nil)
+		// Redraw footer to because the total item is changed
+		app.footerView.SetText(fmt.Sprintf("%d/%d: %s", app.selectedItemIndex+1, len(app.items), item.Footer))
+	})
+}
+
+/**
+* Read the directory and create one Item for each file/subdir found
+* The created items will be sent to itemAddedChannel
+*/
+func scanDirectory(itemAddedChannel chan<- Item) {
 	var path string
 	if len(os.Args) == 1 {
 		log.Println("No path, using current working directory")
@@ -230,6 +232,13 @@ func addItem(itemAddedChannel chan Item) {
 	}
 }
 
+func main() {
+	initLogger()
+	application := newApplication()
+	go scanDirectory(application.itemAdded)
+	application.start()
+}
+
 func initLogger() {
 	file, err := os.OpenFile("logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -239,9 +248,3 @@ func initLogger() {
 	log.SetOutput(file)
 }
 
-func main() {
-	initLogger()
-	application := newApplication()
-	go addItem(application.itemAdded)
-	application.start()
-}
